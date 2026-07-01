@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: auto-sign-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.1
+      - key: AUTOSIGN_ACCESS_TOKEN
+        sync: false
+      - key: AUTOSIGN_CORS_ORIGINS
+        sync: false

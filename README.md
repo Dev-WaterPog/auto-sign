@@ -130,6 +130,44 @@ See also the root `.gitignore`, which excludes `signature/` and `template/`
 (the real signature image and internal documents used to develop this
 project) from version control.
 
+## Deployment (Cloudflare Pages + Render)
+
+GitHub Pages **cannot** run this app — it only serves static files and has no
+way to run the Python backend. This project instead deploys as two separate
+pieces:
+
+- **Backend → Render.** `render.yaml` at the repo root is a Render Blueprint:
+  in the Render dashboard, "New" → "Blueprint", point it at this repo. It
+  installs `backend/requirements.txt` and runs
+  `uvicorn app.main:app --host 0.0.0.0 --port $PORT`. After the first deploy,
+  set these environment variables in the Render dashboard (they're
+  intentionally left out of `render.yaml` since they're per-deployment
+  secrets/config, not something to commit):
+  - `AUTOSIGN_ACCESS_TOKEN` — a long random value (see [Security](#security)).
+  - `AUTOSIGN_CORS_ORIGINS` — e.g. `["https://auto-sign.pages.dev"]`, filled
+    in once you know the Cloudflare Pages URL from the next step.
+
+  Note: Render's free plan has an **ephemeral filesystem** — every redeploy
+  or restart wipes `backend/app/storage/`. Fine for this app's per-session
+  upload/sign/download flow, but don't rely on old uploads surviving a
+  redeploy.
+
+- **Frontend → Cloudflare Pages.** `next.config.ts` sets `output: "export"`
+  so `npm run build` produces a plain static site in `frontend/out/` (no
+  Node server needed) — verified locally with `npm run build`. In the
+  Cloudflare Pages dashboard, connect this repo with:
+  - Root directory: `frontend`
+  - Build command: `npm run build`
+  - Build output directory: `out`
+  - Environment variable: `NEXT_PUBLIC_API_URL` = your Render backend URL
+    (e.g. `https://auto-sign-backend.onrender.com`) — this is baked in at
+    build time, so set it *before* the first deploy.
+
+Deploy order: backend first (to get its URL for `NEXT_PUBLIC_API_URL`), then
+frontend (to get its URL for `AUTOSIGN_CORS_ORIGINS`), then go back and set
+`AUTOSIGN_CORS_ORIGINS` on Render to match — it redeploys automatically when
+you save an environment variable change.
+
 ## Notes
 
 - The anchor patterns used to locate the signature/date on the page are
