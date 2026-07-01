@@ -1,12 +1,24 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="AUTOSIGN_")
 
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001"]
+    # Plain comma-separated string rather than list[str]: pydantic-settings
+    # requires JSON array syntax (e.g. '["a","b"]') for list-typed env vars
+    # and raises a SettingsError otherwise — too easy to get wrong when
+    # typing into a hosting dashboard's plain-text env var field.
+    cors_origins_csv: str = Field(
+        default="http://localhost:3000,http://localhost:3001",
+        validation_alias="AUTOSIGN_CORS_ORIGINS",
+    )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins_csv.split(",") if origin.strip()]
 
     # Shared access token required on every API request (via the
     # X-Access-Token header) once set. Leave empty for local development

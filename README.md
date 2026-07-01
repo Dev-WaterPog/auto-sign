@@ -144,8 +144,9 @@ pieces:
   intentionally left out of `render.yaml` since they're per-deployment
   secrets/config, not something to commit):
   - `AUTOSIGN_ACCESS_TOKEN` — a long random value (see [Security](#security)).
-  - `AUTOSIGN_CORS_ORIGINS` — e.g. `["https://auto-sign.pages.dev"]`, filled
-    in once you know the Cloudflare Pages URL from the next step.
+  - `AUTOSIGN_CORS_ORIGINS` — a plain (not JSON) comma-separated list, e.g.
+    `https://auto-sign.pages.dev`, filled in once you know the Cloudflare
+    Pages URL from the next step.
 
   Note: Render's free plan has an **ephemeral filesystem** — every redeploy
   or restart wipes `backend/app/storage/`. Fine for this app's per-session
