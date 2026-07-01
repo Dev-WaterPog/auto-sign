@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+app/storage/signatures/*
+app/storage/templates/*
+app/storage/output/*
+!app/storage/signatures/.gitkeep
+!app/storage/templates/.gitkeep
+!app/storage/output/.gitkeep

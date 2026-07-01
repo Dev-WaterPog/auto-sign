@@ -1,0 +1,8 @@
+# Real sample documents/signatures used for local testing — contain a real
+# handwritten signature and internal company documents. Never commit these.
+/signature/
+/template/
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
