@@ -57,7 +57,9 @@ Open http://localhost:3000 (or the port Next.js picks if 3000 is busy). Set
 
 ## Dashboard (`frontend/src/app/page.tsx`)
 
-Single page that drives the whole flow end to end:
+Single page that drives the whole flow end to end. If an access code isn't
+already saved in the browser (see [Security](#security) below), it shows a
+gate asking for one before anything else.
 
 1. Upload a PDF template.
 2. Draw or attach a signature via the Signature Pad.
@@ -96,6 +98,37 @@ Thai font installed) instead of the PDF library's default Helvetica, to match
 the look of Thai documents that typically use TH Sarabun/TH SarabunPSK.
 Configured once in `backend/app/services/fonts.py` and used by both signing
 services.
+
+## Security
+
+The app has **no database and no user accounts** — every upload is just a
+file on disk named by a random id, with no owner tracking. Two protections
+exist so it can be exposed on a public URL without being wide open:
+
+- **Access token** (`backend/app/core/auth.py`) — set `AUTOSIGN_ACCESS_TOKEN`
+  (in `backend/.env`) to require that value on the `X-Access-Token` header
+  for every API route except `/api/health`. Leave it unset for local
+  development — auth is skipped entirely so there's no friction. The
+  frontend gate (`frontend/src/app/page.tsx`) asks for this code once,
+  stores it in `localStorage`, and attaches it to every request
+  (`frontend/src/lib/api.ts`); a `401` response clears the stored code and
+  re-shows the gate. This is a single shared secret, not per-user auth — good
+  enough to keep the app from being wide open to search-engine crawlers and
+  randoms, not a substitute for real accounts if that's ever needed.
+- **Upload size limits** (`backend/app/core/limits.py`) — 5 MB for
+  signatures, 25 MB for PDF templates, enforced by capping how many bytes are
+  ever read from the upload rather than buffering the whole file first.
+
+Before making the running app reachable from the public internet:
+1. Set `AUTOSIGN_ACCESS_TOKEN` to a long random value and share it only with
+   intended users.
+2. Set `AUTOSIGN_CORS_ORIGINS` to the real frontend domain (never `*`).
+3. Periodically clear `backend/app/storage/` — uploaded/signed files are
+   never deleted automatically.
+
+See also the root `.gitignore`, which excludes `signature/` and `template/`
+(the real signature image and internal documents used to develop this
+project) from version control.
 
 ## Notes
 

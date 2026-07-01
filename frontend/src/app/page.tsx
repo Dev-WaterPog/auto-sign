@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SignaturePad } from "@/components/signature-pad";
-import { signDocumentByAnchor, signDocumentDirect, type SignaturePosition } from "@/lib/api";
+import { ApiError, signDocumentByAnchor, signDocumentDirect, type SignaturePosition } from "@/lib/api";
+import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/access-token";
 
 type SignMode = "placeholder" | "anchor";
 
@@ -25,6 +26,10 @@ export default function Home() {
   const [placementWarning, setPlacementWarning] = useState<{ signaturePlaced: boolean; datePlaced: boolean }>();
   const [signedPdf, setSignedPdf] = useState<{ url: string; filename: string }>();
 
+  const [accessToken, setAccessTokenState] = useState("");
+  const [tokenInput, setTokenInput] = useState("");
+  const [authError, setAuthError] = useState<string>();
+
   // Revoke the previous blob URL whenever it's replaced or the page unmounts.
   useEffect(() => {
     return () => {
@@ -36,6 +41,18 @@ export default function Home() {
   useEffect(() => {
     setDateValue(new Date().toISOString().slice(0, 10));
   }, []);
+
+  // Read any previously-saved access code, client-side only.
+  useEffect(() => {
+    setAccessTokenState(getAccessToken());
+  }, []);
+
+  function handleGateSubmit() {
+    if (!tokenInput.trim()) return;
+    setAccessToken(tokenInput.trim());
+    setAccessTokenState(tokenInput.trim());
+    setAuthError(undefined);
+  }
 
   async function handleSign() {
     if (!templateFile || !signatureFile) return;
@@ -70,10 +87,43 @@ export default function Home() {
         return { url: URL.createObjectURL(blob), filename };
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (err instanceof ApiError && err.status === 401) {
+        clearAccessToken();
+        setAccessTokenState("");
+        setAuthError("Access code invalid or expired — enter it again.");
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setSigning(false);
     }
+  }
+
+  if (!accessToken) {
+    return (
+      <div className="flex flex-1 items-center justify-center bg-zinc-50 px-4 dark:bg-black">
+        <Card className="w-full max-w-sm">
+          <CardHeader>
+            <CardTitle>Enter access code</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <Input
+              type="password"
+              placeholder="Access code"
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleGateSubmit();
+              }}
+            />
+            {authError && <p className="text-sm text-destructive">{authError}</p>}
+            <Button onClick={handleGateSubmit} disabled={!tokenInput.trim()}>
+              Continue
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (

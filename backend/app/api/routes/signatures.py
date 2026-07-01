@@ -2,8 +2,9 @@ from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from app.core.config import settings
+from app.core.limits import MAX_SIGNATURE_SIZE, read_within_limit
 from app.models.schemas import UploadedFile
-from app.services.storage import find_by_id, save_upload
+from app.services.storage import find_by_id, save_bytes
 
 router = APIRouter(prefix="/api/signatures", tags=["signatures"])
 
@@ -14,7 +15,8 @@ ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg"}
 async def upload_signature(file: UploadFile) -> UploadedFile:
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(status_code=400, detail="Signature must be a PNG or JPEG image")
-    file_id, _ = save_upload(file, settings.signatures_dir)
+    content = await read_within_limit(file, MAX_SIGNATURE_SIZE, "Signature")
+    file_id, _ = save_bytes(content, file.filename, settings.signatures_dir)
     return UploadedFile(id=file_id, filename=file.filename or "", url=f"/api/signatures/{file_id}")
 
 

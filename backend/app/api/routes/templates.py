@@ -2,8 +2,9 @@ from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from app.core.config import settings
+from app.core.limits import MAX_TEMPLATE_SIZE, read_within_limit
 from app.models.schemas import UploadedFile
-from app.services.storage import find_by_id, save_upload
+from app.services.storage import find_by_id, save_bytes
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
@@ -12,7 +13,8 @@ router = APIRouter(prefix="/api/templates", tags=["templates"])
 async def upload_template(file: UploadFile) -> UploadedFile:
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Template must be a PDF file")
-    file_id, _ = save_upload(file, settings.templates_dir)
+    content = await read_within_limit(file, MAX_TEMPLATE_SIZE, "Template")
+    file_id, _ = save_bytes(content, file.filename, settings.templates_dir)
     return UploadedFile(id=file_id, filename=file.filename or "", url=f"/api/templates/{file_id}")
 
 

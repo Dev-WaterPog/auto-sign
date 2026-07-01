@@ -5,6 +5,7 @@ from fastapi import APIRouter, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from app.core.config import settings
+from app.core.limits import MAX_SIGNATURE_SIZE, MAX_TEMPLATE_SIZE, read_within_limit
 from app.services.placeholder_signer import sign_document_with_placeholder
 
 router = APIRouter(prefix="/api", tags=["sign-document"])
@@ -26,8 +27,8 @@ async def sign_document(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="date_value must be in YYYY-MM-DD format") from exc
 
-    template_bytes = await template.read()
-    signature_bytes = await signature.read()
+    template_bytes = await read_within_limit(template, MAX_TEMPLATE_SIZE, "Template")
+    signature_bytes = await read_within_limit(signature, MAX_SIGNATURE_SIZE, "Signature")
 
     try:
         signed_pdf = sign_document_with_placeholder(template_bytes, signature_bytes, date_value=parsed_date)

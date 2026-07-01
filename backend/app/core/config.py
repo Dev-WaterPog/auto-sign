@@ -8,6 +8,11 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001"]
 
+    # Shared access token required on every API request (via the
+    # X-Access-Token header) once set. Leave empty for local development
+    # (auth is skipped entirely) — always set this before deploying publicly.
+    access_token: str = ""
+
     storage_dir: Path = Path(__file__).resolve().parents[1] / "storage"
     signatures_dir: Path = storage_dir / "signatures"
     templates_dir: Path = storage_dir / "templates"

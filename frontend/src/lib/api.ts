@@ -1,4 +1,37 @@
+import { getAccessToken } from "@/lib/access-token";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+function authHeaders(extra?: Record<string, string>): HeadersInit {
+  const token = getAccessToken();
+  return { ...extra, ...(token ? { "X-Access-Token": token } : {}) };
+}
+
+async function throwIfError(res: Response): Promise<void> {
+  if (res.ok) return;
+  let detail = `${res.status} ${res.statusText}`;
+  try {
+    const body = (await res.json()) as { detail?: string };
+    if (body.detail) detail = body.detail;
+  } catch {
+    // response wasn't JSON; fall back to the status text above
+  }
+  throw new ApiError(res.status, detail);
+}
+
+async function parseOrThrow<T>(res: Response): Promise<T> {
+  await throwIfError(res);
+  return res.json() as Promise<T>;
+}
 
 export type UploadedFile = {
   id: string;
@@ -13,35 +46,27 @@ export type SignResult = {
   date_placed: boolean;
 };
 
-async function parseOrThrow<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${body}`);
-  }
-  return res.json() as Promise<T>;
-}
-
 export async function uploadTemplate(file: File): Promise<UploadedFile> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${API_URL}/api/templates`, { method: "POST", body: form });
+  const res = await fetch(`${API_URL}/api/templates`, { method: "POST", headers: authHeaders(), body: form });
   return parseOrThrow<UploadedFile>(res);
 }
 
 export async function uploadSignature(file: File): Promise<UploadedFile> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${API_URL}/api/signatures`, { method: "POST", body: form });
+  const res = await fetch(`${API_URL}/api/signatures`, { method: "POST", headers: authHeaders(), body: form });
   return parseOrThrow<UploadedFile>(res);
 }
 
 export async function listTemplates(): Promise<UploadedFile[]> {
-  const res = await fetch(`${API_URL}/api/templates`);
+  const res = await fetch(`${API_URL}/api/templates`, { headers: authHeaders() });
   return parseOrThrow<UploadedFile[]>(res);
 }
 
 export async function listSignatures(): Promise<UploadedFile[]> {
-  const res = await fetch(`${API_URL}/api/signatures`);
+  const res = await fetch(`${API_URL}/api/signatures`, { headers: authHeaders() });
   return parseOrThrow<UploadedFile[]>(res);
 }
 
@@ -59,7 +84,7 @@ export async function signDocument(params: {
 }): Promise<SignResult> {
   const res = await fetch(`${API_URL}/api/sign`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({
       template_id: params.templateId,
       signature_id: params.signatureId,
@@ -82,6 +107,11 @@ export type SignedDocument = {
   filename: string;
 };
 
+async function parseBlobOrThrow(res: Response): Promise<Blob> {
+  await throwIfError(res);
+  return res.blob();
+}
+
 /** Uploads a template PDF + signature PNG directly and gets the signed PDF back in one round trip. */
 export async function signDocumentDirect(
   templateFile: File,
@@ -93,19 +123,8 @@ export async function signDocumentDirect(
   form.append("signature", signatureFile);
   if (dateValue) form.append("date_value", dateValue);
 
-  const res = await fetch(`${API_URL}/api/sign-document`, { method: "POST", body: form });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const body = (await res.json()) as { detail?: string };
-      if (body.detail) detail = body.detail;
-    } catch {
-      // response wasn't JSON; fall back to the status text above
-    }
-    throw new Error(detail);
-  }
-
-  const blob = await res.blob();
+  const res = await fetch(`${API_URL}/api/sign-document`, { method: "POST", headers: authHeaders(), body: form });
+  const blob = await parseBlobOrThrow(res);
   const disposition = res.headers.get("Content-Disposition") ?? "";
   const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "signed-document.pdf";
   return { blob, filename };
@@ -142,9 +161,8 @@ export async function signDocumentByAnchor(params: {
     dateValue: params.dateValue,
   });
 
-  const res = await fetch(apiUrl(result.download_url));
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  const blob = await res.blob();
+  const res = await fetch(apiUrl(result.download_url), { headers: authHeaders() });
+  const blob = await parseBlobOrThrow(res);
 
   return {
     blob,
