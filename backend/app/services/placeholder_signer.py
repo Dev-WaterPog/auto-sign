@@ -32,10 +32,12 @@ def sign_document_with_placeholder(
     placeholder_pattern: re.Pattern[str] = SIGNATURE_PLACEHOLDER_PATTERN,
     date_format: str = "%d/%m/%Y",
     date_value: datetime | None = None,
+    require_date: bool = True,
 ) -> bytes:
     """Returns the signed PDF as bytes. `date_value` defaults to today when
-    not given. Raises ValueError if the placeholder is not found anywhere in
-    the document.
+    not given. Set `require_date=False` for templates with no date field —
+    only the signature image is stamped. Raises ValueError if the
+    placeholder is not found anywhere in the document.
     """
     doc = fitz.open(stream=template_bytes, filetype="pdf")
     placeholders_by_page = _find_placeholder_rects(doc, placeholder_pattern)
@@ -58,13 +60,14 @@ def sign_document_with_placeholder(
         for rect in rects:
             sig_rect = fitz.Rect(rect.x0, rect.y0, rect.x0 + sig_width, rect.y0 + sig_height)
             page.insert_image(sig_rect, stream=signature_bytes, keep_proportion=True)
-            page.insert_text(
-                (rect.x0, sig_rect.y1 + DATE_GAP + DATE_FONT_SIZE),
-                today_str,
-                fontsize=DATE_FONT_SIZE,
-                fontname=DATE_FONT_NAME,
-                fontfile=str(DATE_FONT_PATH),
-            )
+            if require_date:
+                page.insert_text(
+                    (rect.x0, sig_rect.y1 + DATE_GAP + DATE_FONT_SIZE),
+                    today_str,
+                    fontsize=DATE_FONT_SIZE,
+                    fontname=DATE_FONT_NAME,
+                    fontfile=str(DATE_FONT_PATH),
+                )
 
     output = doc.tobytes(garbage=4, deflate=True)
     doc.close()

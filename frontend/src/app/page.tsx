@@ -15,12 +15,13 @@ import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/access-t
 type SignMode = "placeholder" | "anchor";
 
 export default function Home() {
-  const [templateFile, setTemplateFile] = useState<File>();
+  const [templateFiles, setTemplateFiles] = useState<File[]>([]);
   const [signatureFile, setSignatureFile] = useState<File>();
   const [mode, setMode] = useState<SignMode>("placeholder");
   const [anchorText, setAnchorText] = useState("");
   const [position, setPosition] = useState<SignaturePosition>("right");
   const [dateValue, setDateValue] = useState("");
+  const [includeDate, setIncludeDate] = useState(true);
   const [signing, setSigning] = useState(false);
   const [error, setError] = useState<string>();
   const [placementWarning, setPlacementWarning] = useState<{ signaturePlaced: boolean; datePlaced: boolean }>();
@@ -55,7 +56,7 @@ export default function Home() {
   }
 
   async function handleSign() {
-    if (!templateFile || !signatureFile) return;
+    if (templateFiles.length === 0 || !signatureFile) return;
     if (mode === "anchor" && !anchorText.trim()) {
       setError("Enter text to search for on the template (e.g. a name).");
       return;
@@ -67,18 +68,24 @@ export default function Home() {
       let blob: Blob;
       let filename: string;
       if (mode === "placeholder") {
-        ({ blob, filename } = await signDocumentDirect(templateFile, signatureFile, dateValue || undefined));
+        ({ blob, filename } = await signDocumentDirect(
+          templateFiles,
+          signatureFile,
+          dateValue || undefined,
+          includeDate,
+        ));
       } else {
         const result = await signDocumentByAnchor({
-          templateFile,
+          templateFiles,
           signatureFile,
           signatureAnchor: anchorText,
           signaturePosition: position,
           dateValue: dateValue || undefined,
+          requireDate: includeDate,
         });
         blob = result.blob;
         filename = result.filename;
-        if (!result.signaturePlaced || !result.datePlaced) {
+        if (!result.signaturePlaced || (includeDate && !result.datePlaced)) {
           setPlacementWarning({ signaturePlaced: result.signaturePlaced, datePlaced: result.datePlaced });
         }
       }
@@ -135,14 +142,23 @@ export default function Home() {
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="template-upload">1. Document template (PDF)</Label>
+              <Label htmlFor="template-upload">1. Document template(s) (PDF)</Label>
               <Input
                 id="template-upload"
                 type="file"
                 accept="application/pdf"
-                onChange={(e) => setTemplateFile(e.target.files?.[0])}
+                multiple
+                onChange={(e) => setTemplateFiles(Array.from(e.target.files ?? []))}
               />
-              {templateFile && <p className="text-muted-foreground text-sm">Selected: {templateFile.name}</p>}
+              {templateFiles.length > 0 && (
+                <p className="text-muted-foreground text-sm">
+                  {templateFiles.length === 1
+                    ? `Selected: ${templateFiles[0].name}`
+                    : `Selected ${templateFiles.length} files, will be signed and merged in this order: ${templateFiles
+                        .map((f) => f.name)
+                        .join(", ")}`}
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">
@@ -200,19 +216,35 @@ export default function Home() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="date-value">4. Date to stamp</Label>
-              <Input
-                id="date-value"
-                type="date"
-                value={dateValue}
-                onChange={(e) => setDateValue(e.target.value)}
-                className="w-fit"
-              />
+              <Label htmlFor="include-date" className="cursor-pointer">
+                <input
+                  id="include-date"
+                  type="checkbox"
+                  checked={includeDate}
+                  onChange={(e) => setIncludeDate(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                4. Stamp a date next to the signature
+              </Label>
+              <p className="text-muted-foreground text-sm">
+                Uncheck this for templates with no date field next to the signature line.
+              </p>
+              {includeDate && (
+                <Input
+                  id="date-value"
+                  type="date"
+                  value={dateValue}
+                  onChange={(e) => setDateValue(e.target.value)}
+                  className="w-fit"
+                />
+              )}
             </div>
 
             <Button
               size="lg"
-              disabled={!templateFile || !signatureFile || signing || (mode === "anchor" && !anchorText.trim())}
+              disabled={
+                templateFiles.length === 0 || !signatureFile || signing || (mode === "anchor" && !anchorText.trim())
+              }
               onClick={() => void handleSign()}
             >
               {signing ? "Signing..." : "Sign document automatically"}
@@ -227,9 +259,11 @@ export default function Home() {
                     ? "Signature placed at text"
                     : "Text not found — signature placed at bottom-right"}
                 </Badge>
-                <Badge variant={placementWarning.datePlaced ? "default" : "destructive"}>
-                  {placementWarning.datePlaced ? "Date placed" : "Date anchor not found — placed at bottom-right"}
-                </Badge>
+                {includeDate && (
+                  <Badge variant={placementWarning.datePlaced ? "default" : "destructive"}>
+                    {placementWarning.datePlaced ? "Date placed" : "Date anchor not found — placed at bottom-right"}
+                  </Badge>
+                )}
               </div>
             )}
           </CardContent>

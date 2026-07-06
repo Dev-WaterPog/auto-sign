@@ -108,7 +108,22 @@ def _available_gap(lines: list["fitz.Rect"], anchor: "fitz.Rect", position: Sign
     if position == "below":
         edges = [ln.y0 for ln in lines if ln.y0 >= anchor.y1 - 0.5 and overlaps_horizontally(ln)]
         return min(edges) - anchor.y1 if edges else None
-    return None
+
+    # "right": the box is vertically centered on the anchor's top edge
+    # (see `_signature_rect`), so half its height extends above that edge and
+    # half below — it can bleed into a neighboring line on either side just
+    # as easily as "above"/"below" can.
+    above_edges = [ln.y1 for ln in lines if ln.y1 <= anchor.y0 + 0.5 and overlaps_horizontally(ln)]
+    below_edges = [ln.y0 for ln in lines if ln.y0 >= anchor.y1 - 0.5 and overlaps_horizontally(ln)]
+    available_up = anchor.y0 - max(above_edges) if above_edges else None
+    available_down = min(below_edges) - anchor.y0 if below_edges else None
+    if available_up is None and available_down is None:
+        return None
+    if available_up is None:
+        return 2 * available_down
+    if available_down is None:
+        return 2 * available_up
+    return 2 * min(available_up, available_down)
 
 
 def _signature_box_size(
@@ -180,6 +195,7 @@ def _sign_page(
     signature_path: Path,
     signature_position: SignaturePosition,
     today_str: str,
+    require_date: bool = True,
 ) -> tuple[bool, bool]:
     """Stamps the signature (and its nearest date label) onto `page` if the
     signature anchor matches there. Returns (signature_placed, date_placed)
@@ -194,6 +210,9 @@ def _sign_page(
     box_size = _signature_box_size(anchor, signature_path, max_height)
     rect = _signature_rect(anchor, signature_position, box_size)
     page.insert_image(rect, filename=str(signature_path), keep_proportion=True)
+
+    if not require_date:
+        return True, False
 
     # Forms often repeat the date label once per signature block, so prefer
     # the occurrence closest to wherever the signature landed on this page
@@ -215,12 +234,16 @@ def sign_pdf(
     date_format: str,
     signature_position: SignaturePosition = "right",
     date_value: datetime | None = None,
+    require_date: bool = True,
 ) -> tuple[bool, bool]:
     """Stamps `signature_path` and a date onto *every* page of
     `template_path` where the anchor regexes match (e.g. a multi-page
     document with one signature block per page), writing the result to
-    `output_path`. `date_value` defaults to today when not given. Returns
-    (signature_placed, date_placed) — true if at least one page matched.
+    `output_path`. `date_value` defaults to today when not given. Set
+    `require_date=False` for templates with no date field at all — this
+    skips the date anchor search entirely and never falls back to stamping
+    one. Returns (signature_placed, date_placed) — true if at least one page
+    matched; `date_placed` is always False when `require_date` is False.
     """
     sig_regex = re.compile(signature_anchor_pattern, re.IGNORECASE)
     date_regex = re.compile(date_anchor_pattern, re.IGNORECASE)
@@ -232,12 +255,12 @@ def sign_pdf(
 
     for page in doc:
         page_signature_placed, page_date_placed = _sign_page(
-            page, sig_regex, date_regex, signature_path, signature_position, today_str
+            page, sig_regex, date_regex, signature_path, signature_position, today_str, require_date
         )
         signature_placed = signature_placed or page_signature_placed
         date_placed = date_placed or page_date_placed
 
-    if not date_placed:
+    if require_date and not date_placed:
         for page in doc:
             anchor = _find_anchor_rect(page, date_regex)
             if anchor is not None:
@@ -247,7 +270,7 @@ def sign_pdf(
 
     # Fall back to stamping the bottom-right of the last page so the
     # document is never left unsigned just because the anchor text wasn't found.
-    if not signature_placed or not date_placed:
+    if not signature_placed or (require_date and not date_placed):
         last_page = doc[-1]
         page_rect = last_page.rect
         if not signature_placed:
@@ -260,7 +283,7 @@ def sign_pdf(
             )
             last_page.insert_image(rect, filename=str(signature_path), keep_proportion=True)
             signature_placed = True
-        if not date_placed:
+        if require_date and not date_placed:
             last_page.insert_text(
                 (page_rect.x1 - FALLBACK_MARGIN - SIGNATURE_BOX_SIZE[0], page_rect.y1 - FALLBACK_MARGIN - SIGNATURE_BOX_SIZE[1] - 4),
                 today_str,
