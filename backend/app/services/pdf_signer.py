@@ -25,6 +25,17 @@ ABSOLUTE_MIN_SIGNATURE_HEIGHT = 10.0  # last-resort floor when space is very tig
 SignaturePosition = Literal["right", "above", "below"]
 
 
+def _normalize_thai(text: str) -> str:
+    """Some Thai PDF fonts (seen with subsetted AngsanaUPC forms) mis-map
+    สระอา (า, U+0E32) to สระอำ (ำ, U+0E33) in the extracted text layer even
+    though the glyph renders as อา on screen — e.g. "วัชรากร" extracts as
+    "วัชรำกร". Canonicalizing both the anchor pattern and the searched text
+    to อา before matching means anchors still resolve on such files, and
+    normal text (where both sides already agree) is unaffected.
+    """
+    return text.replace("ำ", "า")
+
+
 def _line_rects(page: "fitz.Page") -> list["fitz.Rect"]:
     text_dict = page.get_text("dict")
     rects: list[fitz.Rect] = []
@@ -52,7 +63,7 @@ def _find_all_anchor_rects(page: "fitz.Page", pattern: re.Pattern[str]) -> list[
         for line in block.get("lines", []):
             spans = line.get("spans", [])
             # Fast path: the anchor text lives entirely within one span.
-            matched_span = next((span for span in spans if pattern.search(span["text"])), None)
+            matched_span = next((span for span in spans if pattern.search(_normalize_thai(span["text"]))), None)
             if matched_span is not None:
                 rects.append(fitz.Rect(matched_span["bbox"]))
                 continue
@@ -61,7 +72,7 @@ def _find_all_anchor_rects(page: "fitz.Page", pattern: re.Pattern[str]) -> list[
             # would otherwise hide an anchor like "วันที่" from a per-span
             # search. Fall back to matching against the whole line.
             if len(spans) > 1:
-                line_text = "".join(span["text"] for span in spans)
+                line_text = _normalize_thai("".join(span["text"] for span in spans))
                 if pattern.search(line_text):
                     rect = fitz.Rect(spans[0]["bbox"])
                     for span in spans[1:]:
@@ -245,8 +256,8 @@ def sign_pdf(
     one. Returns (signature_placed, date_placed) — true if at least one page
     matched; `date_placed` is always False when `require_date` is False.
     """
-    sig_regex = re.compile(signature_anchor_pattern, re.IGNORECASE)
-    date_regex = re.compile(date_anchor_pattern, re.IGNORECASE)
+    sig_regex = re.compile(_normalize_thai(signature_anchor_pattern), re.IGNORECASE)
+    date_regex = re.compile(_normalize_thai(date_anchor_pattern), re.IGNORECASE)
     today_str = (date_value or datetime.now()).strftime(date_format)
 
     doc = fitz.open(template_path)
